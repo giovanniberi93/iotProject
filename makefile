@@ -1,0 +1,2 @@
+COMPONENT=MQTTmoteAppC
+include $(MAKERULES)
