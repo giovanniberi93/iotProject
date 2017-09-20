@@ -8,7 +8,6 @@ implementation{
 	// generic components
 	components new AMSenderC(CONNECT) as CONNECTsender;
 	components new AMReceiverC(CONNECT) as CONNECTreceiver;
-	components new TimerMilliC();
 
 	// App.interface	-> Component that offers that interface
 	// Shared components
@@ -16,8 +15,8 @@ implementation{
 	App.AMControl		-> ActiveMessageC;
 	App.Packet			-> CONNECTreceiver;
 	App.AMPacket		-> CONNECTreceiver;
+	App.PacketAcknowledgements -> ActiveMessageC;
 	// Client-only components
-	App.MessageTimer	-> TimerMilliC;
 	App.CONNECTsender	-> CONNECTsender;
 	// Server-only components
 	App.CONNECTreceiver	-> CONNECTreceiver;

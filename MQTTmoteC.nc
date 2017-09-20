@@ -4,8 +4,8 @@ module MQTTmoteC @safe(){
 	uses {
 		interface Boot;
 		interface AMPacket;
+		interface PacketAcknowledgements;
 		interface SplitControl as AMControl;
-		interface Timer<TMilli> as MessageTimer;
 		interface Packet;
 		// MQTT client interfaces
 		interface AMSend as CONNECTsender;
@@ -64,17 +64,16 @@ implementation{
 	event void CONNECTsender.sendDone(message_t* msg, error_t error){
 		if(/*&packet == buf && */ error == SUCCESS ){ 
 			dbg("clientMessages", "Packet correctly sent...");
+			if(call PacketAcknowledgements.wasAcked(msg)){
+				dbg("clientMessages", "acked \n");
+			}
+			else{
+				dbg("clientMessages", "NON acked \n");
+				call PacketAcknowledgements.requestAck(&pkt);
+				call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
+			}
 		}
 
-	}
-
-	// MessageTimer (Timer) interface
-	event void MessageTimer.fired(){
-		// message_t packet;
-		// connect_msg_t* my_payload;
-		// my_payload = (connect_msg_t*)call Packet.getPayload(&packet, sizeof(connect_msg_t));
-		// my_payload-> ID = 56;
-		// call CONNECTsender.send(1, &packet, sizeof(connect_msg_t));
 	}
 
 	/////////////////////////////////////////////
@@ -85,6 +84,7 @@ implementation{
 	event message_t* CONNECTreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		connect_msg_t* my_payload;
 		my_payload = (connect_msg_t*)payload;
+		
 		if(addID(&connectedDevices,my_payload->ID) == 1)
 			dbg("serverMessages","Device %hu connected\n",my_payload->ID);
 		else
@@ -106,7 +106,9 @@ implementation{
 		if(isClient()){
 			connect_msg_t* my_payload;
 			my_payload = (connect_msg_t*)(call Packet.getPayload(&pkt,sizeof(connect_msg_t)));
+			// put device ID as payload
 			my_payload-> ID = TOS_NODE_ID;
+			call PacketAcknowledgements.requestAck(&pkt);
 			call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
 
 		}
@@ -120,7 +122,6 @@ implementation{
 		call AMControl.start();
 		if (isClient()){
 			dbg("boot","MQTTclient on\n");
-			// call MessageTimer.startPeriodic(1000);
 		}
 		else{ 
 			dbg("boot","MQTTserver on\n");
