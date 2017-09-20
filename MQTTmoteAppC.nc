@@ -6,19 +6,19 @@ implementation{
 	components MQTTmoteC as App, MainC; 
 	components ActiveMessageC;
 	// generic components
-	components new AMSenderC(SEND_VALUE_MSG);
-	components new AMReceiverC(SEND_VALUE_MSG);
+	components new AMSenderC(CONNECT) as CONNECTsender;
+	components new AMReceiverC(CONNECT) as CONNECTreceiver;
 	components new TimerMilliC();
 
-//  App.interface		-> Component that offers that interface
+	// App.interface	-> Component that offers that interface
 	// Shared components
 	App.Boot			-> MainC.Boot;
-	App.AMCo
-	ntrol		-> ActiveMessageC;
-	App.Packet			-> AMSenderC;
+	App.AMControl		-> ActiveMessageC;
+	App.Packet			-> CONNECTreceiver;
+	App.AMPacket		-> CONNECTreceiver;
 	// Client-only components
-	App.ValueSender		-> AMSenderC;
 	App.MessageTimer	-> TimerMilliC;
+	App.CONNECTsender	-> CONNECTsender;
 	// Server-only components
-	App.ReceiveValues	-> AMReceiverC;
+	App.CONNECTreceiver	-> CONNECTreceiver;
 }

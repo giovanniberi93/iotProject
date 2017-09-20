@@ -3,46 +3,92 @@
 module MQTTmoteC @safe(){
 	uses {
 		interface Boot;
+		interface AMPacket;
 		interface SplitControl as AMControl;
 		interface Timer<TMilli> as MessageTimer;
 		interface Packet;
-		// only for MQTT clients
-		interface AMSend as ValueSender;
-		// only for MQTT server
-		interface Receive as ReceiveValues;
+		// MQTT client interfaces
+		interface AMSend as CONNECTsender;
+		// MQTT server interfaces
+		interface Receive as CONNECTreceiver;
 	}
 }
 
 implementation{
-	// shared variables
-	message_t packet;
-	send_value_msg_t* my_payload;
+
+	/////////////////////////////////////////////
+	////////////// SHARED VARIABLES /////////////
+	/////////////////////////////////////////////
+	
+	sizedArray_t connectedDevices;
+	sizedArray_t TEMPsubs;
+	sizedArray_t HUMsubs;
+	sizedArray_t LUMINsubs;
+	
+	message_t pkt;
+	/////////////////////////////////////////////
+	///////// HELPER FUNCTIONS and TASKS ////////
+	/////////////////////////////////////////////
+
+	bool isClient(){
+		return (TOS_NODE_ID != 1);
+	}
+
+	// given an ID and a sized array, it checks if the id is already into the list.
+	// If it is not, the ID is added to the sized array, otherwise return
+	int addID(sizedArray_t* x, nx_int16_t newID){
+		int i;
+		if((int)x->counter >= (int)MAX_CONNECTED)
+			return 0;
+		for (i=0; i < x->counter; i++)
+			if (x->IDs[i] == newID)
+				return 1;
+		x->IDs[x->counter] = newID;
+		x->counter = x->counter+1;
+		return 1;
+	}
+
+	// data structures required to implement broker functionalities
+	task void initBrokerStructures(){
+		connectedDevices.counter = 0;
+		TEMPsubs.counter = 0;
+		HUMsubs.counter = 0;
+		LUMINsubs.counter = 0;
+	}
 
 	/////////////////////////////////////////////
 	////// CLIENT INTERFACE IMPLEMENTATION //////
 	/////////////////////////////////////////////
 	
-	// ValueSender (AMSend) interface
-	event void ValueSender.sendDone(message_t* msg, error_t error){
-		dbg("clientMessages", "message sent\n");
+	// CONNECTsender (AMSend) interface
+	event void CONNECTsender.sendDone(message_t* msg, error_t error){
+		if(/*&packet == buf && */ error == SUCCESS ){ 
+			dbg("clientMessages", "Packet correctly sent...");
+		}
+
 	}
 
 	// MessageTimer (Timer) interface
 	event void MessageTimer.fired(){
-		my_payload = (send_value_msg_t*)call Packet.getPayload(&packet, sizeof(send_value_msg_t));
-		my_payload-> msg_value = 56;
-		call ValueSender.send(1, &packet, sizeof(send_value_msg_t));
+		// message_t packet;
+		// connect_msg_t* my_payload;
+		// my_payload = (connect_msg_t*)call Packet.getPayload(&packet, sizeof(connect_msg_t));
+		// my_payload-> ID = 56;
+		// call CONNECTsender.send(1, &packet, sizeof(connect_msg_t));
 	}
 
 	/////////////////////////////////////////////
 	////// SERVER INTERFACE IMPLEMENTATION //////
 	/////////////////////////////////////////////
 
-	// ReceiveValues interface
-	event message_t* ReceiveValues.receive(message_t* msgPtr, void* payload, uint8_t len){
-		my_payload = (send_value_msg_t*)payload;
-		dbg("serverMessages","PacketReceived, value: %hu\n",my_payload->msg_value);
-		return msgPtr;
+	// CONNECTreceiver interface
+	event message_t* CONNECTreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
+		connect_msg_t* my_payload;
+		my_payload = (connect_msg_t*)payload;
+		if(addID(&connectedDevices,my_payload->ID) == 1)
+			dbg("serverMessages","Device %hu connected\n",my_payload->ID);
+		else
+			dbg("serverMessages","Device %hu can't connect, too many devices already connected\n",my_payload->ID);
 	}
 	
 	/////////////////////////////////////////////
@@ -55,6 +101,15 @@ implementation{
 			dbg("AMcontrol", "AM started\n");
 		else
 			call AMControl.start();
+
+		// client connects to the server
+		if(isClient()){
+			connect_msg_t* my_payload;
+			my_payload = (connect_msg_t*)(call Packet.getPayload(&pkt,sizeof(connect_msg_t)));
+			my_payload-> ID = TOS_NODE_ID;
+			call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
+
+		}
 	}
 	event void AMControl.stopDone(error_t error){
 		dbg("AMcontrol", "AM stopped\n");
@@ -63,12 +118,14 @@ implementation{
 	// Boot interface
 	event void Boot.booted(){
 		call AMControl.start();
-		if (TOS_NODE_ID != 1){
-			call MessageTimer.startPeriodic(1000);
+		if (isClient()){
 			dbg("boot","MQTTclient on\n");
+			// call MessageTimer.startPeriodic(1000);
 		}
-		else 
+		else{ 
 			dbg("boot","MQTTserver on\n");
+			post initBrokerStructures();
+		}
 	}
 
 }
