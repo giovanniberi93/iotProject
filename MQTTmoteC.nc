@@ -10,11 +10,15 @@ module MQTTmoteC @safe(){
 		interface Random;
 		interface Timer<TMilli> as MilliTimer;
 		// MQTT client interfaces
-		interface AMSend as CONNECTsender;
-		interface AMSend as SUBSCRIBEsender;
+			interface AMSend as CONNECTsender;
+			interface AMSend as SUBSCRIBEsender;
+			interface AMSend as PUBLISHsender;
+			// represent the read from a sensor
+			interface Read<uint16_t>;
 		// MQTT server interfaces
-		interface Receive as CONNECTreceiver;
-		interface Receive as SUBSCRIBEreceiver;
+			interface Receive as CONNECTreceiver;
+			interface Receive as SUBSCRIBEreceiver;
+			interface Receive as PUBLISHreceiver;
 	}
 }
 
@@ -25,9 +29,11 @@ implementation{
 	/////////////////////////////////////////////
 	
 	sizedArray_t connectedDevices;
-	sizedArray_t TEMPsubs;
-	sizedArray_t HUMsubs;
-	sizedArray_t LUMINsubs;
+	// array in position 0 contains id subscribed at qos0
+	// array in position 1 contains id subscribed at qos1
+	sizedArray_t TEMPsubs[2];
+	sizedArray_t HUMsubs[2];
+	sizedArray_t LUMINsubs[2];
 	
 	message_t pkt;
 	message_t pkt_subscribe;
@@ -70,21 +76,23 @@ implementation{
 	// data structures required to implement broker functionalities
 	task void initServerStructures(){
 		connectedDevices.counter = 0;
-		TEMPsubs.counter = 0;
-		HUMsubs.counter = 0;
-		LUMINsubs.counter = 0;
+		TEMPsubs[0].counter = 0;
+		TEMPsubs[1].counter = 0;
+		HUMsubs[0].counter = 0;
+		HUMsubs[1].counter = 0;
+		LUMINsubs[0].counter = 0;
+		LUMINsubs[1].counter = 0;
 	}
 
 	task void sendSubscription(){
 		sub_msg_t* my_payload;
 		
 		// 4 because: 3 topics, or no topics
-		subscription = call Random.rand16() % 4;
-
+		// subscription = call Random.rand16() % 4;
 		// for test 
-		// subscription = 0;
+		subscription = 0;
 		if (subscription == NO_SUBS){
-			dbg("clientMessages","node %hhu has no subscriptions", TOS_NODE_ID);
+			dbg("clientMessages","node %hhu has no subscriptions\n", TOS_NODE_ID);
 			return;
 		} else {
 			dbg("clientMessages","Node %hhu wants topic %hhu \n",TOS_NODE_ID, subscription);
@@ -154,7 +162,15 @@ implementation{
 				call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
 			}
 		}
+	}
 
+	// PUBLISHsender (AMSend) interface
+	event void PUBLISHsender.sendDone(message_t* msg, error_t error){
+		// TODO
+	}
+
+	event void Read.readDone(error_t result, uint16_t data) {
+		// TODO
 	}
 
 	/////////////////////////////////////////////
@@ -180,15 +196,19 @@ implementation{
 		int err; 
 
 		my_payload = (sub_msg_t*)payload;
+		if((my_payload->qos != 0) && (my_payload->qos =! 1)){
+			dbg("serverMessages","Subscription rejected: incorrect qos value\n");
+			return bufPtr;
+		}
 		switch(my_payload->subscription){
 			case TEMPERATURE:
-				topicSubcribers = &TEMPsubs;
+				topicSubcribers = &TEMPsubs[my_payload->qos];
 				break;
 			case HUMIDITY:
-				topicSubcribers = &HUMsubs;
+				topicSubcribers = &HUMsubs[my_payload->qos];
 				break;
 			case LUMINOSITY:
-				topicSubcribers = &LUMINsubs;
+				topicSubcribers = &LUMINsubs[my_payload->qos];
 				break;
 			default:
 				topicSubcribers = NULL;
@@ -207,12 +227,16 @@ implementation{
 				if(err == 0)
 					dbg("serverMessages","Subscription rejected: max number of devices exceeded\n");
 				else
-					dbg("serverMessages","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu \n",my_payload->ID,my_payload->subscription);
+					dbg("serverMessages","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",my_payload->ID,my_payload->subscription,my_payload->qos);
 			}
 		}
 		return bufPtr;
 	}
 	
+	event message_t* PUBLISHreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
+
+		return bufPtr;
+	}
 	/////////////////////////////////////////////
 	////// SHARED INTERFACE IMPLEMENTATION //////
 	/////////////////////////////////////////////
@@ -227,7 +251,6 @@ implementation{
 		// client connects to the server
 		if(isClient()){
 			connect_msg_t* my_payload;
-			dbg("clientMessages","sono client");
 			my_payload = (connect_msg_t*)(call Packet.getPayload(&pkt,sizeof(connect_msg_t)));
 			// put device ID as payload
 			my_payload-> ID = TOS_NODE_ID;
@@ -236,6 +259,7 @@ implementation{
 
 		}
 	}
+
 	event void AMControl.stopDone(error_t error){
 		dbg("AMcontrol", "AM stopped\n");
 	}
@@ -247,7 +271,6 @@ implementation{
 			dbg("boot","MQTTclient on\n");
 			// sync call, to be sure all values are set
 			// call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
-			// dbg("boot","mandato un coso\n");
 			initClientStructures();
 			call MilliTimer.startOneShot(call Random.rand16() % MAX_INTERVAL_CLIENT);
 		}
