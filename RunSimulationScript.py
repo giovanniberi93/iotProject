@@ -36,14 +36,14 @@ nullFile = open("/dev/null","w")
 
 #Add debug channel
 print "Activate debug message on channel boot"
-t.addChannel("boot",nullFile);
+t.addChannel("boot",out);
 print "Activate debug message on channel clientMessages"
-t.addChannel("clientMessages",nullFile);
+t.addChannel("clientMessages",out);
 print "Activate debug message on channel serverMessages"
-t.addChannel("serverMessages",nullFile);
+t.addChannel("serverMessages",out);
 print "Activate debug message on channel AMcontrol"
 t.addChannel("AMcontrol",out);
-print "Activate debug message on channel AMcontrol"
+print "Activate debug message on channel AM"
 t.addChannel("AM",nullFile);
 
 print "Creating node 1...";
@@ -57,6 +57,12 @@ node2 = t.getNode(2);
 time2 = 1*t.ticksPerSecond();
 node2.bootAtTime(time2);
 print ">>>Will boot at time", time2/t.ticksPerSecond(), "[sec]";
+
+print "Creating node 3...";
+node3 = t.getNode(3);
+time3 = 2*t.ticksPerSecond();
+node3.bootAtTime(time3);
+print ">>>Will boot at time", time3/t.ticksPerSecond(), "[sec]";
 
 
 print "Creating radio channels..."
@@ -98,7 +104,7 @@ for i in range(1, 3):
 
 print "Start simulation with TOSSIM! \n\n\n";
 
-for i in range(0,1200):
+for i in range(0,4000):
 	t.runNextEvent()
 	
 print "\n\n\nSimulation finished!";
