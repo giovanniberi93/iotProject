@@ -46,6 +46,9 @@ t.addChannel("AMcontrol",out);
 print "Activate debug message on channel AM"
 t.addChannel("AM",nullFile);
 
+# TO BE SET BY HAND
+numNodes = 3
+
 print "Creating node 1...";
 node1 =t.getNode(1);
 time1 = 0*t.ticksPerSecond();
@@ -94,11 +97,11 @@ for line in lines:
             mid_compl = 0;
             sys.stdout.write ("#")
             sys.stdout.flush()
-        for i in range(1, 3):
+        for i in range(1, numNodes+1):
             t.getNode(i).addNoiseTraceReading(val)
 print "Done!";
 
-for i in range(1, 3):
+for i in range(1, numNodes+1):
     print ">>>Creating noise model for node:",i;
     t.getNode(i).createNoiseModel()
 
