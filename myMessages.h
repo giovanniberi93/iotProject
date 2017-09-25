@@ -4,10 +4,12 @@
 // max amount of devices connected
 #define MAX_CONNECTED 16
 
-// max amount of time between an event and the following one
-// in the client
+// max amount of time between an event and the following one in the client
 // expressed in milliseconds
-#define MAX_INTERVAL_CLIENT 1500
+#define WAIT_CONNECT_TIME 1000
+
+// periodicity of the 
+#define CHECK_FORWARD_PERIODICITY 100
 
 #define TEMPERATURE 0
 #define HUMIDITY 1
@@ -25,6 +27,19 @@ typedef nx_struct sub_msg{
 	nx_int16_t qos;
 } sub_msg_t;
 
+typedef nx_struct pub_msg{
+	nx_int16_t topic;
+	nx_int16_t value;
+	nx_int16_t qos;
+} pub_msg_t;
+
+typedef nx_struct forw_msg{
+	nx_int16_t topic;
+	nx_int16_t value;
+	nx_int16_t qos;
+	nx_int16_t destID;
+} forw_msg_t;
+
 // data structure built to store subscriptions
 typedef nx_struct arr{
 	nx_int16_t counter;
@@ -37,6 +52,7 @@ enum{
 	CONNECT = 6,
 	PUBLISH = 7,
 	SUBSCRIBE = 8,
+	FORWARD = 10,
 };
 
 #endif

@@ -8,7 +8,8 @@ implementation{
 	components RandomC;
 
 	// generic components:
-		components new TimerMilliC();
+		components new TimerMilliC() as ClientTimer;
+		components new TimerMilliC() as ServerTimer;
 		components new FakeSensorC();
 		// CONNECT
 		components new AMSenderC(CONNECT) as CONNECTsender;
@@ -19,6 +20,9 @@ implementation{
 		// PUBLISH
 		components new AMSenderC(PUBLISH) as PUBLISHsender;
 		components new AMReceiverC(PUBLISH) as PUBLISHreceiver;
+		// forward messages
+		components new AMSenderC(FORWARD) as FORWARDsender;
+		components new AMReceiverC(FORWARD) as FORWARDreceiver;
 
 	// App.interface	-> Component that offers that interface
 	// Shared components
@@ -27,15 +31,18 @@ implementation{
 	App.Packet			-> CONNECTreceiver;
 	App.AMPacket		-> CONNECTreceiver;
 	App.Random			-> RandomC;
-	App.MilliTimer		-> TimerMilliC;
 	App.PacketAcknowledgements -> ActiveMessageC;
 	// Client-only components
-	App.CONNECTsender	-> CONNECTsender;
-	App.SUBSCRIBEsender	-> SUBSCRIBEsender;
-	App.PUBLISHsender	-> PUBLISHsender;
-	App.Read 			-> FakeSensorC;
+	App.CONNECTsender		-> CONNECTsender;
+	App.SUBSCRIBEsender		-> SUBSCRIBEsender;
+	App.PUBLISHsender		-> PUBLISHsender;
+	App.FORWARDreceiver		-> FORWARDreceiver;
+	App.Read 				-> FakeSensorC;
+	App.ClientRoutineTimer	-> ClientTimer;
 	// Server-only components
 	App.CONNECTreceiver		-> CONNECTreceiver;
 	App.SUBSCRIBEreceiver	-> SUBSCRIBEreceiver;
 	App.PUBLISHreceiver		-> PUBLISHreceiver;
+	App.FORWARDsender		-> FORWARDsender;
+	App.ServerForwardTimer	-> ServerTimer;
 }
