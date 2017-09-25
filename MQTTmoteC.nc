@@ -62,19 +62,50 @@ implementation{
 
 
 
-
 	/////////////////////////////////////////////
 	///////// HELPER FUNCTIONS and TASKS ////////
 	/////////////////////////////////////////////
 
-	task void forwardToSubscribers(){
+	// return ID of the next address in the order of the list of subscribers
+	// return -1 if there are no address with the required qos to which forward the message 
+	long getNextID(int currentDestination, int topicID, int searchedQos){
+		sizedArray_t* topicSubcribers;
 		int i;
+
+		switch(topicID){
+			case TEMPERATURE:
+				topicSubcribers = &TEMPsubs[searchedQos];
+				break;
+			case HUMIDITY:
+				topicSubcribers = &HUMsubs[searchedQos];
+				break;
+			case LUMINOSITY:
+				topicSubcribers = &LUMINsubs[searchedQos];
+				break;
+			default:
+				// if the topic does not exists, end the procedure immediately 
+				dbg("FORWARDserver","error: illegal topic id %hhu\n", topicID);
+				return -1;
+		}
+		
+		// dbg("FORWARDserver","counter dell'array selezionato %hhu\n", topicSubcribers->counter);
+		// dbg("FORWARDserver","currentDestination è %hhu\n", currentDestination);
+		for(i = 0; i < topicSubcribers->counter; i++){
+			// i find currentDestination, that is not in the last position
+			if((topicSubcribers->IDs[i] == currentDestination) && (i != topicSubcribers->counter - 1))
+				return topicSubcribers->IDs[i+1];
+		}
+		return MAX_CONNECTED+1;
+	}
+
+
+	task void forwardToSubscribers(){
 		forw_msg_t* myPayload;
 		sizedArray_t* topicSubcribers;
 		// toBeForwarded points to the message that has just been published
 		// get the significant values in order not to create concurrency problems if other message are published 
 		// and they need toBeForwarded variable in PUBLISHreceiver.receive
-		
+		// dbg("FORWARDserver","pkt to fw -> topic: %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
 		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
 		myPayload-> topic = toBeForwarded->topic;
 		myPayload-> value = toBeForwarded->value;
@@ -90,27 +121,32 @@ implementation{
 				break;
 			default:
 				// if the topic does not exists, end the procedure immediately 
-				dbg("forwardServer","error: illegal topic id %hhu\n");
+				dbg("FORWARDserver","error: illegal topic id %hhu\n", myPayload->topic);
 				return;
 		}
 		// all subscribed clients, with qos=0
-		myPayload->qos = 0;
-		for(i = 0; i < topicSubcribers[0].counter;i++){
-			myPayload->destID = topicSubcribers[0].IDs[i];
-			dbg("forwardServer","forwardo a %hhu\n",myPayload->destID);
+		// dbg("FORWARDserver","qos0: %hhu, qos1: %hhu\n",topicSubcribers[0].counter,topicSubcribers[1].counter);
+
+		// if I have at least one subscribed with qos = 0 
+		if(topicSubcribers[0].counter > 0){
+			myPayload->qos = 0;
+			myPayload->destID = topicSubcribers[0].IDs[0];
 			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
-		}
-		// all subscribed clients, with qos=1
-		myPayload->qos = 1;
-		for(i = 0; i < topicSubcribers[1].counter;i++){
-			myPayload->destID = topicSubcribers[1].IDs[i];
-			dbg("forwardServer","forwardo a %hhu\n",myPayload->destID);
+		} else if (topicSubcribers[1].counter > 0){
+			// if I do not have subscribers with qos = 0, but at least one with qos = 1 
+			myPayload->qos = 1;
+			myPayload->destID = topicSubcribers[1].IDs[0];
 			call PacketAcknowledgements.requestAck(&pkt_forward);
 			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+		} else {
+			// there are no subscribers at all
+			lockedForwarder = 0;
 		}
 
 
 	}
+
+
 
 	bool isClient(){
 		return (TOS_NODE_ID != 1);
@@ -159,10 +195,10 @@ implementation{
 		sub_msg_t* myPayload;
 		
 		if (subscription == NO_SUBS){
-			dbg("clientMessages","node %hhu has no subscriptions\n", TOS_NODE_ID);
+			dbg("SUBSCRIBEclient","node %hhu has no subscriptions\n", TOS_NODE_ID);
 			return;
 		} else {
-			dbg("clientMessages","Node %hhu wants topic %hhu \n",TOS_NODE_ID, subscription);
+			dbg("SUBSCRIBEclient","Node %hhu wants topic %hhu \n",TOS_NODE_ID, subscription);
 		}
 
 		myPayload = (sub_msg_t*)(call Packet.getPayload(&pkt_subscribe,sizeof(sub_msg_t)));
@@ -205,6 +241,15 @@ implementation{
 
 
 
+
+
+
+
+
+
+
+
+
 	/////////////////////////////////////////////
 	////// CLIENT INTERFACE IMPLEMENTATION //////
 	/////////////////////////////////////////////
@@ -215,27 +260,25 @@ implementation{
 		if(connected){
 			if(!subscriptionDone){
 				post sendSubscription();
-				subscriptionDone = 1;
-			}
-			else{
+			}else{
 				// force the read procedure from the (fake) sensor
 				call Read.read();
 			}
 		}
 		// chiamo timer
-		call ClientRoutineTimer.startOneShot(WAIT_CONNECT_TIME);
+		call ClientRoutineTimer.startOneShot(WAIT_CONNECT_TIME/2 + (call Random.rand16()%WAIT_CONNECT_TIME));
 	}
 
 	// CONNECTsender (AMSend) interface
 	event void CONNECTsender.sendDone(message_t* msg, error_t error){
 		if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-			dbg("clientMessages", "CONNECT correctly sent...\n");
+			dbg("CONNECTclient", "CONNECT correctly sent...\n");
 			if(call PacketAcknowledgements.wasAcked(msg)){
 				connected = 1;
-				dbg("clientMessages", "CONNECT acked \n");
+				dbg("CONNECTclient", "CONNECT acked \n");
 			}
 			else{
-				dbg("clientMessages", "CONNECT non acked \n");
+				dbg("CONNECTclient", "CONNECT non acked \n");
 				call PacketAcknowledgements.requestAck(&pkt);
 				call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
 			}
@@ -245,12 +288,13 @@ implementation{
 	// SUBSCRIBEsender (AMSend) interface
 	event void SUBSCRIBEsender.sendDone(message_t* msg, error_t error){
 		if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-			dbg("clientMessages", "SUBSCRIBE correctly sent...\n");
+			dbg("SUBSCRIBEclient", "SUBSCRIBE correctly sent...\n");
 			if(call PacketAcknowledgements.wasAcked(msg)){
-				dbg("clientMessages", "SUBSCRIBE acked \n");
+				dbg("SUBSCRIBEclient", "SUBSCRIBE acked \n");
+				subscriptionDone = 1;
 			}
 			else{
-				dbg("clientMessages", "SUBSCRIBE non acked \n");
+				dbg("SUBSCRIBEclient", "SUBSCRIBE non acked \n");
 				call PacketAcknowledgements.requestAck(&pkt_subscribe);
 				call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
 			}
@@ -261,16 +305,16 @@ implementation{
 	event void PUBLISHsender.sendDone(message_t* msg, error_t error){
 		pub_msg_t *myPayload = (pub_msg_t*)(call Packet.getPayload(msg,sizeof(pub_msg_t)));
 		if(/*&pkt_publish == buf && */ error == SUCCESS ){ 
-			dbg("clientMessages", "PUBLISH correctly sent...\n");
+			dbg("PUBLISHclient", "PUBLISH correctly sent...\n");
 			if(myPayload->qos == 0){
-				dbg("clientMessages","No ack requested\n");
+				dbg("PUBLISHclient","No ack requested\n");
 				return;
 			}
 			if(call PacketAcknowledgements.wasAcked(msg)){
-				dbg("clientMessages", "PUBLISH acked \n");
+				dbg("PUBLISHclient", "PUBLISH acked \n");
 			}
 			else{
-				dbg("clientMessages", "PUBLISH non acked \n");
+				dbg("PUBLISHclient", "PUBLISH non acked \n");
 				call PacketAcknowledgements.requestAck(&pkt_publish);
 				call PUBLISHsender.send(1, &pkt_publish,sizeof(pub_msg_t));
 			}
@@ -281,7 +325,7 @@ implementation{
 	event void Read.readDone(error_t result, uint16_t data) {
 		pub_msg_t* myPayload;
 
-		dbg("clientMessages","data from sensor %hhu \n",data);
+		dbg("PUBLISHclient","data from sensor %hhu \n",data);
 		if(subscriptionDone){
 			myPayload = (pub_msg_t*)(call Packet.getPayload(&pkt_publish,sizeof(pub_msg_t)));
 			// fill the msg fields
@@ -293,18 +337,17 @@ implementation{
 			// qos management, compliant to the requirements
 			if(myPayload->qos == 1){
 				call PacketAcknowledgements.requestAck(&pkt_publish);
-				dbg("clientMessages","qos in PUBLISH = 1\n");
 			}
 			call PUBLISHsender.send(1, &pkt_publish,sizeof(pub_msg_t));
 		}
 	}
 
-	// CONNECTreceiver interface
+	// FORWARDreceiver interface
 	event message_t* FORWARDreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		forw_msg_t* myPayload;
 		myPayload = (forw_msg_t*)payload;
-		
-		dbg("forwardClient","topic %hhu, value %hhu",myPayload->topic, myPayload->value);
+		dbg("FORWARDclient","******** qos: %hhu\n",myPayload->qos);
+		// dbg("FORWARDclient","received:topic %hhu, value %hhu\n",myPayload->topic, myPayload->value);
 		return bufPtr;
 	}
 
@@ -317,22 +360,49 @@ implementation{
 
 	// FORWARD
 	event void FORWARDsender.sendDone(message_t* msg, error_t error){
+		long nextID;
 		forw_msg_t* myPayload;
-		myPayload = (forw_msg_t*)call Packet.getPayload(msg,sizeof(forw_msg_t));
 
+		myPayload = (forw_msg_t*)call Packet.getPayload(msg,sizeof(forw_msg_t));
+		// dbg("FORWARDserver", "fw: qos: %hhu, value: %hhu\n",myPayload->qos,myPayload->value);
 		if (myPayload->qos == 1){
 			if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-				dbg("clientMessages", "FORWARD correctly sent...\n");
+				dbg("FORWARDserver", "FORWARD correctly sent...\n");
 				if(call PacketAcknowledgements.wasAcked(msg)){
-					dbg("clientMessages", "FORWARD acked \n");
+					dbg("FORWARDserver", "FORWARD acked \n");
 				}
 				else{
-					dbg("clientMessages", "FORWARD non acked \n");
+					dbg("FORWARDserver", "FORWARD non acked \n");
 					call PacketAcknowledgements.requestAck(&pkt_forward);
 					call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+					return;
 				}
 			}
 		}
+		// dbg("FORWARDserver", "sono nel nextID\n");
+		nextID = getNextID(myPayload->destID,myPayload->topic,myPayload->qos);
+		if (nextID > MAX_CONNECTED){
+			if(myPayload-> qos == 0){
+				myPayload-> qos = 1;
+				// search in the array of the subscribers with qos = 1
+				nextID = getNextID(myPayload->destID,myPayload->topic,myPayload->qos);
+			}
+			// dbg("FORWARDserver", "e becco nextID = %hhu \n", nextID);
+			if (nextID > MAX_CONNECTED){
+				// forwarding procedure has ended
+				// unlock the forwarder for new messages
+				lockedForwarder = 0;
+				return;
+			}
+		}
+		// if I get here, I have at least one node to which forward the message
+		// if required, set the ack request. In every case, send the message
+		if(myPayload-> qos == 1)
+			call PacketAcknowledgements.requestAck(&pkt_forward);
+		myPayload-> destID = nextID;
+		// dbg("FORWARDserver", "FORWARD to %hhu \n", nextID);
+		call FORWARDsender.send(nextID, &pkt_forward,sizeof(forw_msg_t));
+
 		return;
 	}
 
@@ -343,9 +413,9 @@ implementation{
 		myPayload = (connect_msg_t*)payload;
 		
 		if(addID(&connectedDevices,myPayload->ID) == 1)
-			dbg("serverMessages","Device %hu connected\n",myPayload->ID);
+			dbg("CONNECTserver","Device %hu connected\n",myPayload->ID);
 		else
-			dbg("serverMessages","Device %hu can't connect, too many devices already connected\n",myPayload->ID);
+			dbg("CONNECTserver","Device %hu can't connect, too many devices already connected\n",myPayload->ID);
 		return bufPtr;
 	}
 
@@ -358,8 +428,9 @@ implementation{
 		int err; 
 
 		myPayload = (sub_msg_t*)payload;
+		
 		if((myPayload->qos != 0) && (myPayload->qos =! 1)){
-			dbg("serverMessages","Subscription rejected: incorrect qos value\n");
+			dbg("SUBSCRIBEserver","Subscription rejected: incorrect qos value\n");
 			return bufPtr;
 		}
 		switch(myPayload->subscription){
@@ -377,20 +448,20 @@ implementation{
 		}
 		
 		if(topicSubcribers == NULL){
-			dbg("serverMessages","Subscription rejected: incorrect topic id\n");
+			dbg("SUBSCRIBEserver","Subscription rejected: incorrect topic id\n");
 		} 
 		else {
 			// device is not among the connected ones
 			if(!searchID(&connectedDevices,myPayload->ID)){
-				dbg("serverMessages","Subscription rejected: unknown device ID\n");
+				dbg("SUBSCRIBEserver","Subscription rejected: unknown device ID\n");
 			}
 			// add the ID to the subscriber to the topic
 			else {
 				err = addID(topicSubcribers,myPayload->ID);
 				if(err == 0)
-					dbg("serverMessages","Subscription rejected: max number of devices exceeded\n");
+					dbg("SUBSCRIBEserver","Subscription rejected: max number of devices exceeded\n");
 				else
-					dbg("serverMessages","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,myPayload->subscription,myPayload->qos);
+					dbg("SUBSCRIBEserver","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,myPayload->subscription,myPayload->qos);
 			}
 		}
 		return bufPtr;
@@ -399,16 +470,19 @@ implementation{
 	event void ServerForwardTimer.fired(){
 		// using a task here, because this is likely to be 
 		// the most expensive operation 
+		lockedForwarder = 1;
+		// the procedure forwardToSubscribers() takes care of setting lockedForwarder flag back to 0
+		// in case there is something to forward
 		if(somethingToForward){
-			lockedForwarder = 1;
-			post forwardToSubscribers();
 			somethingToForward = 0;
+			post forwardToSubscribers();
+		}
+		else{
 			lockedForwarder = 0;
 		}
 	}
 	
 	event message_t* PUBLISHreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
-		dbg("publishServer","ricevuto coso\n");
 		// use this flag to check if another message is being forwarded
 		// is this is the case, do not modify toBeForwarded because it's being used by forwardToSubscribers task
 		if(!lockedForwarder){
@@ -436,7 +510,6 @@ implementation{
 			myPayload-> ID = TOS_NODE_ID;
 			call PacketAcknowledgements.requestAck(&pkt);
 			call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
-
 		}
 	}
 
