@@ -1,8 +1,9 @@
 #include "myMessages.h"
-
+#include <stdio.h>
 
 module MQTTmoteC @safe(){
 	uses {
+		interface ParameterInit<uint16_t> as Seed;
 		interface Boot;
 		interface AMPacket;
 		interface PacketAcknowledgements;
@@ -93,8 +94,6 @@ implementation{
 				return;
 		}
 		// all subscribed clients, with qos=0
-		dbg("forwardServer","registrati con qos 0: %hhu \n",topicSubcribers[1].counter);
-		dbg("forwardServer","registrati con qos 1: %hhu \n",topicSubcribers[0].counter);
 		myPayload->qos = 0;
 		for(i = 0; i < topicSubcribers[0].counter;i++){
 			myPayload->destID = topicSubcribers[0].IDs[i];
@@ -178,7 +177,18 @@ implementation{
 		call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
 	}
 
+	// init random seed
+	task void initRNGseed(){
+	    uint16_t seed;
+	    FILE *f;
+	    f = fopen("/dev/urandom", "r");
+	    fread(&seed, sizeof(seed), 1, f);
+	    fclose(f);
+	    call Seed.init(seed+TOS_NODE_ID+1);
+	}
+
 	task void initClientStructures(){	
+		post initRNGseed();
 		connected = 0;
 		subscriptionDone = 0;
 

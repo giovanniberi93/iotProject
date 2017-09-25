@@ -32,6 +32,7 @@ implementation{
 	App.AMPacket		-> CONNECTreceiver;
 	App.Random			-> RandomC;
 	App.PacketAcknowledgements -> ActiveMessageC;
+	App.Seed 			-> RandomC;
 	// Client-only components
 	App.CONNECTsender		-> CONNECTsender;
 	App.SUBSCRIBEsender		-> SUBSCRIBEsender;
