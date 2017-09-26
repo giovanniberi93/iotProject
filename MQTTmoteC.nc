@@ -99,15 +99,15 @@ implementation{
 		return MAX_CONNECTED+1;
 	}
 
-
 	task void forwardToSubscribers(){
 		forw_msg_t* myPayload;
 		sizedArray_t* topicSubcribers;
 		// toBeForwarded points to the message that has just been published
 		// get the significant values in order not to create concurrency problems if other message are published 
 		// and they need toBeForwarded variable in PUBLISHreceiver.receive
-		dbg("FORWARDserver","pkt to fw -> topic: %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
+		dbg("FORWARDserver","New packet to forward on topic %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
 		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
+		myPayload-> sourceID = toBeForwarded->sourceID;
 		myPayload-> topic = toBeForwarded->topic;
 		myPayload-> value = toBeForwarded->value;
 		switch(myPayload->topic){
@@ -216,7 +216,6 @@ implementation{
 		for(i=0; i<3; i++){
 			myPayload-> subscription[i] = topicSubscriptions[i];
 			myPayload-> qos[i] = subscriptionsqos[i];
-			dbg("SUBSCRIBEclient","##%hhu(%hhu)\n",myPayload-> subscription[i],myPayload-> qos[i]);
 		}
 
 		call PacketAcknowledgements.requestAck(&pkt_subscribe);
@@ -251,7 +250,7 @@ implementation{
 				publishedTopic = 0;
 				break;
 			case 3:
-				topicSubscriptions[0] = 0; subscriptionsqos[0] = 0;
+				topicSubscriptions[0] = 1; subscriptionsqos[0] = 0;
 				topicSubscriptions[1] = 1; subscriptionsqos[1] = 1;
 				topicSubscriptions[2] = 1; subscriptionsqos[2] = 1;
 				publishedTopic = 1;
@@ -267,21 +266,13 @@ implementation{
 				break;
 		}
 
-		dbg("SUBSCRIBEclient","Node %hhu, publish on %hhu and subscribes to ",TOS_NODE_ID,publishedTopic);
+		dbg("SUBSCRIBEclient","Publish on %hhu and subscribes to ",publishedTopic);
 		for(i=0; i<3; i++)
 			if(topicSubscriptions[i] == 1)
 				dbg_clear("SUBSCRIBEclient","%hhu(%hhu) ",i,subscriptionsqos[i]);
 		dbg_clear("SUBSCRIBEclient","\n");
 
 	}
-
-
-
-
-
-
-
-
 
 
 
@@ -309,13 +300,13 @@ implementation{
 	// CONNECTsender (AMSend) interface
 	event void CONNECTsender.sendDone(message_t* msg, error_t error){
 		if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-			dbg("CONNECTclient", "CONNECT correctly sent...\n");
+			dbg("CONNECTclient", "CONNECT correctly sent... ");
 			if(call PacketAcknowledgements.wasAcked(msg)){
 				connected = 1;
-				dbg("CONNECTclient", "CONNECT acked \n");
+				dbg_clear("CONNECTclient", "and acked \n");
 			}
 			else{
-				dbg("CONNECTclient", "CONNECT non acked \n");
+				dbg_clear("CONNECTclient", "but NON acked \n");
 				call PacketAcknowledgements.requestAck(&pkt);
 				call CONNECTsender.send(1, &pkt,sizeof(connect_msg_t));
 			}
@@ -325,13 +316,13 @@ implementation{
 	// SUBSCRIBEsender (AMSend) interface
 	event void SUBSCRIBEsender.sendDone(message_t* msg, error_t error){
 		if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-			dbg("SUBSCRIBEclient", "SUBSCRIBE correctly sent...\n");
+			dbg("SUBSCRIBEclient", "SUBSCRIBE correctly sent... ");
 			if(call PacketAcknowledgements.wasAcked(msg)){
-				dbg("SUBSCRIBEclient", "SUBSCRIBE acked \n");
+				dbg_clear("SUBSCRIBEclient", "and acked \n");
 				subscriptionDone = 1;
 			}
 			else{
-				dbg("SUBSCRIBEclient", "SUBSCRIBE non acked \n");
+				dbg_clear("SUBSCRIBEclient", "but non acked \n");
 				call PacketAcknowledgements.requestAck(&pkt_subscribe);
 				call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
 			}
@@ -342,16 +333,16 @@ implementation{
 	event void PUBLISHsender.sendDone(message_t* msg, error_t error){
 		pub_msg_t *myPayload = (pub_msg_t*)(call Packet.getPayload(msg,sizeof(pub_msg_t)));
 		if(/*&pkt_publish == buf && */ error == SUCCESS ){ 
-			dbg("PUBLISHclient", "PUBLISH correctly sent...\n");
+			dbg("PUBLISHclient", "PUBLISH correctly sent... ");
 			if(myPayload->qos == 0){
-				dbg("PUBLISHclient","No ack requested\n");
+				dbg_clear("PUBLISHclient","no ack requested\n");
 				return;
 			}
 			if(call PacketAcknowledgements.wasAcked(msg)){
-				dbg("PUBLISHclient", "PUBLISH acked \n");
+				dbg_clear("PUBLISHclient", "and acked \n");
 			}
 			else{
-				dbg("PUBLISHclient", "PUBLISH non acked \n");
+				dbg_clear("PUBLISHclient", "non acked \n");
 				call PacketAcknowledgements.requestAck(&pkt_publish);
 				call PUBLISHsender.send(1, &pkt_publish,sizeof(pub_msg_t));
 			}
@@ -362,10 +353,11 @@ implementation{
 	event void Read.readDone(error_t result, uint16_t data) {
 		pub_msg_t* myPayload;
 
-		dbg("PUBLISHclient","data from sensor %hhu \n",data);
+		dbg("PUBLISHclient","New measurement from sensor on topic %hhu, value: %hhu \n",publishedTopic,data);
 		if(subscriptionDone){
 			myPayload = (pub_msg_t*)(call Packet.getPayload(&pkt_publish,sizeof(pub_msg_t)));
 			// fill the msg fields
+			myPayload->sourceID = TOS_NODE_ID;
 			myPayload->topic = publishedTopic;
 			myPayload->value = data;
 			// myPayload->qos = (call Random.rand16() % 2);
@@ -383,7 +375,12 @@ implementation{
 	event message_t* FORWARDreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		forw_msg_t* myPayload;
 		myPayload = (forw_msg_t*)payload;
-		dbg("FORWARDclient","******** qos: %hhu\n",myPayload->qos);
+		if(myPayload->sourceID == TOS_NODE_ID){
+			dbg("FORWARDclient","Discard message generated from me\n");
+		}
+		else {
+			dbg("FORWARDclient","Packet received on topic %hhu, value: %hhu\n",myPayload->topic,myPayload->value);
+		}
 		// dbg("FORWARDclient","received:topic %hhu, value %hhu\n",myPayload->topic, myPayload->value);
 		return bufPtr;
 	}
@@ -404,12 +401,12 @@ implementation{
 		// dbg("FORWARDserver", "fw: qos: %hhu, value: %hhu\n",myPayload->qos,myPayload->value);
 		if (myPayload->qos == 1){
 			if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
-				dbg("FORWARDserver", "FORWARD correctly sent...\n");
+				dbg("FORWARDserver", "FORWARD correctly sent... ");
 				if(call PacketAcknowledgements.wasAcked(msg)){
-					dbg("FORWARDserver", "FORWARD acked \n");
+					dbg_clear("FORWARDserver", "and acked \n");
 				}
 				else{
-					dbg("FORWARDserver", "FORWARD non acked \n");
+					dbg_clear("FORWARDserver", "but non acked \n");
 					call PacketAcknowledgements.requestAck(&pkt_forward);
 					call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
 					return;
@@ -484,7 +481,7 @@ implementation{
 					if(err == 0)
 						dbg("SUBSCRIBEserver","Subscription rejected: max number of devices exceeded\n");
 					else
-						dbg("SUBSCRIBEserver","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,i,myPayload->qos[i]);
+						dbg("SUBSCRIBEserver","Subscription accepted: mote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,i,myPayload->qos[i]);
 				}
 			}
 		}

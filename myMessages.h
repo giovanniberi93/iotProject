@@ -28,6 +28,7 @@ typedef nx_struct sub_msg{
 } sub_msg_t;
 
 typedef nx_struct pub_msg{
+	nx_int16_t sourceID;
 	nx_int16_t qos;
 	nx_int16_t topic;
 	nx_int16_t value;
@@ -38,6 +39,7 @@ typedef nx_struct forw_msg{
 	nx_int16_t qos;
 	nx_int16_t value;
 	nx_int16_t destID;
+	nx_int16_t sourceID;
 } forw_msg_t;
 
 // data structure built to store subscriptions
