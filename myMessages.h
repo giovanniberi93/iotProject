@@ -9,7 +9,7 @@
 #define WAIT_CONNECT_TIME 1000
 
 // periodicity of the 
-#define CHECK_FORWARD_PERIODICITY 100
+#define CHECK_FORWARD_PERIODICITY 80
 
 #define TEMPERATURE 0
 #define HUMIDITY 1
@@ -23,20 +23,20 @@ typedef nx_struct connect_msg{
 
 typedef nx_struct sub_msg{
 	nx_int16_t ID;
-	nx_int16_t subscription;
-	nx_int16_t qos;
+	nx_int16_t subscription[3];
+	nx_int16_t qos[3];
 } sub_msg_t;
 
 typedef nx_struct pub_msg{
+	nx_int16_t qos;
 	nx_int16_t topic;
 	nx_int16_t value;
-	nx_int16_t qos;
 } pub_msg_t;
 
 typedef nx_struct forw_msg{
 	nx_int16_t topic;
-	nx_int16_t value;
 	nx_int16_t qos;
+	nx_int16_t value;
 	nx_int16_t destID;
 } forw_msg_t;
 

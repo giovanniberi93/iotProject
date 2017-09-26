@@ -1,5 +1,4 @@
 #include "myMessages.h"
-#include <stdio.h>
 
 module MQTTmoteC @safe(){
 	uses {
@@ -55,8 +54,10 @@ implementation{
 	// topic on which publish
 	int publishedTopic;
 	// topic to which subscribe, and corresponding qos (MQTT-like)
-	int subscription;
-	int qos;
+	// topicSubscriptions[i] = 1 --> interested in topic i
+	// topicSubscriptions[i] = 0 --> NOT interested in topic i
+	int topicSubscriptions[3];
+	int subscriptionsqos[3];
 	// message to be forwarded to subscribers
 	pub_msg_t* toBeForwarded;
 
@@ -105,7 +106,7 @@ implementation{
 		// toBeForwarded points to the message that has just been published
 		// get the significant values in order not to create concurrency problems if other message are published 
 		// and they need toBeForwarded variable in PUBLISHreceiver.receive
-		// dbg("FORWARDserver","pkt to fw -> topic: %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
+		dbg("FORWARDserver","pkt to fw -> topic: %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
 		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
 		myPayload-> topic = toBeForwarded->topic;
 		myPayload-> value = toBeForwarded->value;
@@ -124,8 +125,6 @@ implementation{
 				dbg("FORWARDserver","error: illegal topic id %hhu\n", myPayload->topic);
 				return;
 		}
-		// all subscribed clients, with qos=0
-		// dbg("FORWARDserver","qos0: %hhu, qos1: %hhu\n",topicSubcribers[0].counter,topicSubcribers[1].counter);
 
 		// if I have at least one subscribed with qos = 0 
 		if(topicSubcribers[0].counter > 0){
@@ -176,6 +175,22 @@ implementation{
 		return 1;
 	}
 
+	// return the pointer to a sizedArray containing the subscribers to a topic, with given qos
+	sizedArray_t* getTopicSubscribers(int topicID, int qos){
+		switch(topicID){
+			case TEMPERATURE:
+				return &TEMPsubs[qos];
+			case HUMIDITY:
+				return &HUMsubs[qos];
+			case LUMINOSITY:
+				return &LUMINsubs[qos];
+			default:
+				return NULL;
+				dbg("SUBSCRIBEserver","Subscription rejected: incorrect topic id\n");
+		}
+	}	
+
+
 	// data structures required to implement broker functionalities
 	task void initServerStructures(){
 		// call Mutex.init(&forwardMessages_mutex);
@@ -193,21 +208,16 @@ implementation{
 
 	task void sendSubscription(){
 		sub_msg_t* myPayload;
+		nx_int16_t i;
 		
-		if (subscription == NO_SUBS){
-			dbg("SUBSCRIBEclient","node %hhu has no subscriptions\n", TOS_NODE_ID);
-			return;
-		} else {
-			dbg("SUBSCRIBEclient","Node %hhu wants topic %hhu \n",TOS_NODE_ID, subscription);
-		}
-
 		myPayload = (sub_msg_t*)(call Packet.getPayload(&pkt_subscribe,sizeof(sub_msg_t)));
 		// fill the fields of the message
 		myPayload-> ID = TOS_NODE_ID;
-		myPayload-> subscription = subscription;
-		// myPayload-> qos = (call Random.rand16() % 2);
-		// test purpose
-		myPayload-> qos = 0;
+		for(i=0; i<3; i++){
+			myPayload-> subscription[i] = topicSubscriptions[i];
+			myPayload-> qos[i] = subscriptionsqos[i];
+			dbg("SUBSCRIBEclient","##%hhu(%hhu)\n",myPayload-> subscription[i],myPayload-> qos[i]);
+		}
 
 		call PacketAcknowledgements.requestAck(&pkt_subscribe);
 		call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
@@ -224,17 +234,44 @@ implementation{
 	}
 
 	task void initClientStructures(){	
+		nx_int16_t i;
+
 		post initRNGseed();
 		connected = 0;
 		subscriptionDone = 0;
+		// select topic to which subscribe, and on which publish;
+		// set fixed subscriptions for test purpose
+		// if you want a different test criteria set random subscription with: 
+		// call Random.rand16()%desired_max_value
+		switch(TOS_NODE_ID){
+			case 2:
+				topicSubscriptions[0] = 1; subscriptionsqos[0] = 0;
+				topicSubscriptions[1] = 1; subscriptionsqos[1] = 1;
+				topicSubscriptions[2] = 0; subscriptionsqos[2] = 0;
+				publishedTopic = 0;
+				break;
+			case 3:
+				topicSubscriptions[0] = 0; subscriptionsqos[0] = 0;
+				topicSubscriptions[1] = 1; subscriptionsqos[1] = 1;
+				topicSubscriptions[2] = 1; subscriptionsqos[2] = 1;
+				publishedTopic = 1;
+				break;
+			case 4:
+				topicSubscriptions[0] = 1; subscriptionsqos[0] = 0;
+				topicSubscriptions[1] = 0; subscriptionsqos[1] = 0;
+				topicSubscriptions[2] = 1; subscriptionsqos[2] = 0;
+				publishedTopic = 2;
+				break;
+			default:
+				dbg("SUBSCRIBEclient","error, unexpected node ID value");
+				break;
+		}
 
-		// 4 because: 3 topics, or no topics
-		// subscription = call Random.rand16() % 4;
-		// publishedTopic = call Random.rand16() % 4;
-
-		// for test purpose 
-		subscription = 0;
-		publishedTopic = 0;
+		dbg("SUBSCRIBEclient","Node %hhu, publish on %hhu and subscribes to ",TOS_NODE_ID,publishedTopic);
+		for(i=0; i<3; i++)
+			if(topicSubscriptions[i] == 1)
+				dbg_clear("SUBSCRIBEclient","%hhu(%hhu) ",i,subscriptionsqos[i]);
+		dbg_clear("SUBSCRIBEclient","\n");
 
 	}
 
@@ -425,43 +462,30 @@ implementation{
 	event message_t* SUBSCRIBEreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		sub_msg_t* myPayload;
 		sizedArray_t* topicSubcribers;
-		int err; 
+		int err, i; 
 
 		myPayload = (sub_msg_t*)payload;
-		
-		if((myPayload->qos != 0) && (myPayload->qos =! 1)){
-			dbg("SUBSCRIBEserver","Subscription rejected: incorrect qos value\n");
-			return bufPtr;
-		}
-		switch(myPayload->subscription){
-			case TEMPERATURE:
-				topicSubcribers = &TEMPsubs[myPayload->qos];
-				break;
-			case HUMIDITY:
-				topicSubcribers = &HUMsubs[myPayload->qos];
-				break;
-			case LUMINOSITY:
-				topicSubcribers = &LUMINsubs[myPayload->qos];
-				break;
-			default:
-				topicSubcribers = NULL;
-		}
-		
-		if(topicSubcribers == NULL){
-			dbg("SUBSCRIBEserver","Subscription rejected: incorrect topic id\n");
-		} 
-		else {
-			// device is not among the connected ones
-			if(!searchID(&connectedDevices,myPayload->ID)){
-				dbg("SUBSCRIBEserver","Subscription rejected: unknown device ID\n");
-			}
-			// add the ID to the subscriber to the topic
-			else {
-				err = addID(topicSubcribers,myPayload->ID);
-				if(err == 0)
-					dbg("SUBSCRIBEserver","Subscription rejected: max number of devices exceeded\n");
-				else
-					dbg("SUBSCRIBEserver","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,myPayload->subscription,myPayload->qos);
+		// scan the message, and add id of the source mote in the list of subscribed topics
+		for(i = 0; i < 3; i++){
+			// if the source mote is interested to topic i
+			if(myPayload->subscription[i] == 1){
+				if((myPayload->qos[i] != 0) && (myPayload->qos[i] != 1)){
+					dbg("SUBSCRIBEserver","Subscription rejected: incorrect qos value\n");
+					return bufPtr;
+				}
+				topicSubcribers = getTopicSubscribers(i,myPayload->qos[i]);
+				// device is not among the connected ones
+				if(!searchID(&connectedDevices,myPayload->ID)){
+					dbg("SUBSCRIBEserver","Subscription rejected: unknown device ID\n");
+				}
+				// add the ID to the subscriber to the topic
+				else {
+					err = addID(topicSubcribers,myPayload->ID);
+					if(err == 0)
+						dbg("SUBSCRIBEserver","Subscription rejected: max number of devices exceeded\n");
+					else
+						dbg("SUBSCRIBEserver","Subscription accepted:\n \t\tmote %hhu subscribed to %hhu, qos:%hhu\n",myPayload->ID,i,myPayload->qos[i]);
+				}
 			}
 		}
 		return bufPtr;
