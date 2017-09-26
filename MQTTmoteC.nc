@@ -60,6 +60,11 @@ implementation{
 	int subscriptionsqos[3];
 	// message to be forwarded to subscribers
 	pub_msg_t* toBeForwarded;
+	// ids of last received msg ids; only for forward and publish message, because the other ones are idempotent
+	nx_int16_t lastPublishID;
+		// used by the server; requires one lastID for each client, because their IDs are independent
+	nx_int16_t lastPublishIDfromClients[MAX_CONNECTED];
+	nx_int16_t lastForwardID;
 
 
 
@@ -126,17 +131,20 @@ implementation{
 				return;
 		}
 
+		myPayload->msgID = lastForwardID;
 		// if I have at least one subscribed with qos = 0 
 		if(topicSubcribers[0].counter > 0){
 			myPayload->qos = 0;
 			myPayload->destID = topicSubcribers[0].IDs[0];
 			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			lastForwardID++;
 		} else if (topicSubcribers[1].counter > 0){
 			// if I do not have subscribers with qos = 0, but at least one with qos = 1 
 			myPayload->qos = 1;
 			myPayload->destID = topicSubcribers[1].IDs[0];
 			call PacketAcknowledgements.requestAck(&pkt_forward);
 			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			lastForwardID++;
 		} else {
 			// there are no subscribers at all
 			lockedForwarder = 0;
@@ -193,9 +201,14 @@ implementation{
 
 	// data structures required to implement broker functionalities
 	task void initServerStructures(){
-		// call Mutex.init(&forwardMessages_mutex);
+		nx_int16_t i;
+
 		somethingToForward = 0;
 		lockedForwarder = 0;
+		// used to check for duplicate messages
+		lastForwardID = 0;
+		for(i = 0; i < MAX_CONNECTED; i++)
+			lastPublishIDfromClients[i] = -1;
 
 		connectedDevices.counter = 0;
 		TEMPsubs[0].counter		 = 0;
@@ -236,6 +249,8 @@ implementation{
 		nx_int16_t i;
 
 		post initRNGseed();
+		lastPublishID = 0;
+		lastForwardID = -1;
 		connected = 0;
 		subscriptionDone = 0;
 		// select topic to which subscribe, and on which publish;
@@ -360,8 +375,10 @@ implementation{
 			myPayload->sourceID = TOS_NODE_ID;
 			myPayload->topic = publishedTopic;
 			myPayload->value = data;
-			// myPayload->qos = (call Random.rand16() % 2);
 			myPayload->qos = 1;
+			myPayload->msgID = lastPublishID;
+			// increment the ID
+			lastPublishID++;
 
 			// qos management, compliant to the requirements
 			if(myPayload->qos == 1){
@@ -374,14 +391,23 @@ implementation{
 	// FORWARDreceiver interface
 	event message_t* FORWARDreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		forw_msg_t* myPayload;
+
 		myPayload = (forw_msg_t*)payload;
+		// only check if this message is equal to the last one; it happens if the ack was lost
+		if(lastForwardID == myPayload->msgID){
+			dbg("FORWARDserver","FW:Message received twice, discard\n");
+			return bufPtr;
+		}
+		// else update id of last received msg
+		else{
+			lastForwardID = myPayload->msgID;
+		}
 		if(myPayload->sourceID == TOS_NODE_ID){
 			dbg("FORWARDclient","Discard message generated from me\n");
 		}
 		else {
 			dbg("FORWARDclient","Packet received on topic %hhu, value: %hhu\n",myPayload->topic,myPayload->value);
 		}
-		// dbg("FORWARDclient","received:topic %hhu, value %hhu\n",myPayload->topic, myPayload->value);
 		return bufPtr;
 	}
 
@@ -398,7 +424,6 @@ implementation{
 		forw_msg_t* myPayload;
 
 		myPayload = (forw_msg_t*)call Packet.getPayload(msg,sizeof(forw_msg_t));
-		// dbg("FORWARDserver", "fw: qos: %hhu, value: %hhu\n",myPayload->qos,myPayload->value);
 		if (myPayload->qos == 1){
 			if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
 				dbg("FORWARDserver", "FORWARD correctly sent... ");
@@ -436,6 +461,7 @@ implementation{
 		myPayload-> destID = nextID;
 		// dbg("FORWARDserver", "FORWARD to %hhu \n", nextID);
 		call FORWARDsender.send(nextID, &pkt_forward,sizeof(forw_msg_t));
+
 
 		return;
 	}
@@ -504,10 +530,21 @@ implementation{
 	}
 	
 	event message_t* PUBLISHreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
+		pub_msg_t* tmp;
+
+		tmp = (pub_msg_t*)payload;
+		// only check if this message is equal to the last one; it happens if the ack was lost
+		if(lastPublishIDfromClients[tmp->sourceID] == tmp->msgID){
+			dbg("PUBLISHserver","PB:Message received twice, discard id %hhu\n",tmp->msgID);
+			return bufPtr;
+		}
+		// else update id of last received msg
+		else
+			lastPublishIDfromClients[tmp->sourceID] = tmp->msgID;
 		// use this flag to check if another message is being forwarded
 		// is this is the case, do not modify toBeForwarded because it's being used by forwardToSubscribers task
 		if(!lockedForwarder){
-			toBeForwarded = (pub_msg_t*) payload;
+			toBeForwarded = tmp;
 			somethingToForward = 1;
 		}
 		return bufPtr;
