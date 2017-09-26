@@ -1,4 +1,4 @@
-#include "myMessages.h"
+#include "MQTT.h"
 
 module MQTTmoteC @safe(){
 	uses {
@@ -9,7 +9,7 @@ module MQTTmoteC @safe(){
 		interface SplitControl as AMControl;
 		interface Packet;
 		interface Random;
-		// interface Mutex;
+		// interface Mutex;	
 		// MQTT client interfaces
 			interface Timer<TMilli> as ClientRoutineTimer;
 			interface AMSend as CONNECTsender;
@@ -69,12 +69,12 @@ implementation{
 
 
 	/////////////////////////////////////////////
-	///////// HELPER FUNCTIONS and TASKS ////////
+	////////////// HELPER FUNCTIONS  ////////////
 	/////////////////////////////////////////////
 
 	// return ID of the next address in the order of the list of subscribers
 	// return -1 if there are no address with the required qos to which forward the message 
-	long getNextID(int currentDestination, int topicID, int searchedQos){
+	int getNextID(int currentDestination, int topicID, int searchedQos){
 		sizedArray_t* topicSubcribers;
 		int i;
 
@@ -101,56 +101,7 @@ implementation{
 			if((topicSubcribers->IDs[i] == currentDestination) && (i != topicSubcribers->counter - 1))
 				return topicSubcribers->IDs[i+1];
 		}
-		return MAX_CONNECTED+1;
-	}
-
-	task void forwardToSubscribers(){
-		forw_msg_t* myPayload;
-		sizedArray_t* topicSubcribers;
-		// toBeForwarded points to the message that has just been published
-		// get the significant values in order not to create concurrency problems if other message are published 
-		// and they need toBeForwarded variable in PUBLISHreceiver.receive
-		dbg("FORWARDserver","New packet to forward on topic %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
-		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
-		myPayload-> sourceID = toBeForwarded->sourceID;
-		myPayload-> topic = toBeForwarded->topic;
-		myPayload-> value = toBeForwarded->value;
-		switch(myPayload->topic){
-			case TEMPERATURE:
-				topicSubcribers = TEMPsubs;
-				break;
-			case HUMIDITY:
-				topicSubcribers = HUMsubs;
-				break;
-			case LUMINOSITY:
-				topicSubcribers = LUMINsubs;
-				break;
-			default:
-				// if the topic does not exists, end the procedure immediately 
-				dbg("FORWARDserver","error: illegal topic id %hhu\n", myPayload->topic);
-				return;
-		}
-
-		myPayload->msgID = lastForwardID;
-		// if I have at least one subscribed with qos = 0 
-		if(topicSubcribers[0].counter > 0){
-			myPayload->qos = 0;
-			myPayload->destID = topicSubcribers[0].IDs[0];
-			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
-			lastForwardID++;
-		} else if (topicSubcribers[1].counter > 0){
-			// if I do not have subscribers with qos = 0, but at least one with qos = 1 
-			myPayload->qos = 1;
-			myPayload->destID = topicSubcribers[1].IDs[0];
-			call PacketAcknowledgements.requestAck(&pkt_forward);
-			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
-			lastForwardID++;
-		} else {
-			// there are no subscribers at all
-			lockedForwarder = 0;
-		}
-
-
+		return -1;
 	}
 
 
@@ -199,25 +150,70 @@ implementation{
 	}	
 
 
-	// data structures required to implement broker functionalities
-	task void initServerStructures(){
-		nx_int16_t i;
 
-		somethingToForward = 0;
-		lockedForwarder = 0;
-		// used to check for duplicate messages
-		lastForwardID = 0;
-		for(i = 0; i < MAX_CONNECTED; i++)
-			lastPublishIDfromClients[i] = -1;
 
-		connectedDevices.counter = 0;
-		TEMPsubs[0].counter		 = 0;
-		TEMPsubs[1].counter		 = 0;
-		HUMsubs[0].counter		 = 0;
-		HUMsubs[1].counter		 = 0;
-		LUMINsubs[0].counter	 = 0;
-		LUMINsubs[1].counter	 = 0;
+
+	/////////////////////////////////////////////
+	//////////////////// TASKS //////////////////
+	/////////////////////////////////////////////
+
+	// init random seed
+	task void initRNGseed(){
+	    uint16_t seed;
+	    FILE *f;
+	    f = fopen("/dev/urandom", "r");
+	    fread(&seed, sizeof(seed), 1, f);
+	    fclose(f);
+	    call Seed.init(seed+TOS_NODE_ID+1);
 	}
+
+
+	task void forwardToSubscribers(){
+		forw_msg_t* myPayload;
+		sizedArray_t* topicSubcribers;
+		// toBeForwarded points to the message that has just been published
+		// get the significant values in order not to create concurrency problems if other message are published 
+		// and they need toBeForwarded variable in PUBLISHreceiver.receive
+		dbg("FORWARDserver","New packet to forward on topic %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
+		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
+		myPayload-> sourceID = toBeForwarded->sourceID;
+		myPayload-> topic = toBeForwarded->topic;
+		myPayload-> value = toBeForwarded->value;
+		switch(myPayload->topic){
+			case TEMPERATURE:
+				topicSubcribers = TEMPsubs;
+				break;
+			case HUMIDITY:
+				topicSubcribers = HUMsubs;
+				break;
+			case LUMINOSITY:
+				topicSubcribers = LUMINsubs;
+				break;
+			default:
+				// if the topic does not exists, end the procedure immediately 
+				dbg("FORWARDserver","error: illegal topic id %hhu\n", myPayload->topic);
+				return;
+		}
+		myPayload->msgID = lastForwardID;
+		// if I have at least one subscribed with qos = 0 
+		if(topicSubcribers[0].counter > 0){
+			myPayload->qos = 0;
+			myPayload->destID = topicSubcribers[0].IDs[0];
+			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			lastForwardID++;
+		} else if (topicSubcribers[1].counter > 0){
+			// if I do not have subscribers with qos = 0, but at least one with qos = 1 
+			myPayload->qos = 1;
+			myPayload->destID = topicSubcribers[1].IDs[0];
+			call PacketAcknowledgements.requestAck(&pkt_forward);
+			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			lastForwardID++;
+		} else {
+			// there are no subscribers at all
+			lockedForwarder = 0;
+		}
+	}
+
 
 	task void sendSubscription(){
 		sub_msg_t* myPayload;
@@ -235,15 +231,7 @@ implementation{
 		call SUBSCRIBEsender.send(1, &pkt_subscribe,sizeof(sub_msg_t));
 	}
 
-	// init random seed
-	task void initRNGseed(){
-	    uint16_t seed;
-	    FILE *f;
-	    f = fopen("/dev/urandom", "r");
-	    fread(&seed, sizeof(seed), 1, f);
-	    fclose(f);
-	    call Seed.init(seed+TOS_NODE_ID+1);
-	}
+
 
 	task void initClientStructures(){	
 		nx_int16_t i;
@@ -290,6 +278,27 @@ implementation{
 	}
 
 
+	// data structures required to implement broker functionalities
+	task void initServerStructures(){
+		nx_int16_t i;
+
+		somethingToForward = 0;
+		lockedForwarder = 0;
+		// used to check for duplicate messages
+		lastForwardID = 0;
+		for(i = 0; i < MAX_CONNECTED; i++)
+			lastPublishIDfromClients[i] = -1;
+
+		connectedDevices.counter = 0;
+		TEMPsubs[0].counter		 = 0;
+		TEMPsubs[1].counter		 = 0;
+		HUMsubs[0].counter		 = 0;
+		HUMsubs[1].counter		 = 0;
+		LUMINsubs[0].counter	 = 0;
+		LUMINsubs[1].counter	 = 0;
+	}
+
+
 
 
 
@@ -309,7 +318,7 @@ implementation{
 			}
 		}
 		// chiamo timer
-		call ClientRoutineTimer.startOneShot(WAIT_CONNECT_TIME/2 + (call Random.rand16()%WAIT_CONNECT_TIME));
+		call ClientRoutineTimer.startOneShot(CLIENT_AVG_SENSE_PERIOD/2 + (call Random.rand16()%CLIENT_AVG_SENSE_PERIOD));
 	}
 
 	// CONNECTsender (AMSend) interface
@@ -418,7 +427,7 @@ implementation{
 	////// SERVER INTERFACE IMPLEMENTATION //////
 	/////////////////////////////////////////////
 
-	// FORWARD
+	// FORWARDsender(AMsend) interface
 	event void FORWARDsender.sendDone(message_t* msg, error_t error){
 		long nextID;
 		forw_msg_t* myPayload;
@@ -438,18 +447,17 @@ implementation{
 				}
 			}
 		}
-		// dbg("FORWARDserver", "sono nel nextID\n");
 		nextID = getNextID(myPayload->destID,myPayload->topic,myPayload->qos);
-		if (nextID > MAX_CONNECTED){
+		if (nextID < 0){
 			if(myPayload-> qos == 0){
 				myPayload-> qos = 1;
 				// search in the array of the subscribers with qos = 1
 				nextID = getNextID(myPayload->destID,myPayload->topic,myPayload->qos);
 			}
-			// dbg("FORWARDserver", "e becco nextID = %hhu \n", nextID);
-			if (nextID > MAX_CONNECTED){
+			if (nextID < 0){
 				// forwarding procedure has ended
 				// unlock the forwarder for new messages
+				dbg_clear("FORWARDserver", "****** %d \n",nextID);
 				lockedForwarder = 0;
 				return;
 			}
@@ -514,6 +522,7 @@ implementation{
 		return bufPtr;
 	}
 
+	// periodic task, check for published messages to forward
 	event void ServerForwardTimer.fired(){
 		// using a task here, because this is likely to be 
 		// the most expensive operation 
@@ -529,6 +538,7 @@ implementation{
 		}
 	}
 	
+	// PUBLISHreceiver (AMreceive) interface
 	event message_t* PUBLISHreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
 		pub_msg_t* tmp;
 
@@ -578,11 +588,11 @@ implementation{
 	// Boot interface
 	event void Boot.booted(){
 		call AMControl.start();
+		// here the code separates in client code and server code
 		if (isClient()){
 			dbg("boot","MQTTclient on\n");
-			// sync call, to be sure all values are set
 			post initClientStructures();
-			call ClientRoutineTimer.startOneShot(WAIT_CONNECT_TIME);
+			call ClientRoutineTimer.startOneShot(CLIENT_AVG_SENSE_PERIOD);
 		}
 		else{ 
 			dbg("boot","MQTTserver on\n");

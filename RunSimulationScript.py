@@ -36,18 +36,35 @@ nullFile = open("/dev/null","w")
 
 #Add debug channel
 print "Activate debug message on channel boot"
-t.addChannel("boot",out);
-print "Activate debug message on channel clientMessages"
-t.addChannel("clientMessages",out);
-print "Activate debug message on channel serverMessages"
-t.addChannel("serverMessages",out);
+# t.addChannel("boot",out);
+# CONNECT MESSAGE
+print "Activate debug message on channel CONNECTclient"
+# t.addChannel("CONNECTclient",out);
+print "Activate debug message on channel CONNECTserver"
+# t.addChannel("CONNECTserver",out);
+# SUBSCRIBE MESSAGE
+print "Activate debug message on channel SUBSCRIBEclient"
+t.addChannel("SUBSCRIBEclient",out);
+print "Activate debug message on channel SUBSCRIBEserver"
+t.addChannel("SUBSCRIBEserver",out);
+# FORWARD MESSAGE
+print "Activate debug message on channel FORWARDclient"
+# t.addChannel("FORWARDclient",out);
+print "Activate debug message on channel FORWARDserver"
+# t.addChannel("FORWARDserver",out);
+# PUBLISH MESSAGE
+print "Activate debug message on channel PUBLISHClient"
+# t.addChannel("PUBLISHclient",out);
+print "Activate debug message on channel PUBLISHServer"
+# t.addChannel("PUBLISHserver",out);
+
 print "Activate debug message on channel AMcontrol"
-t.addChannel("AMcontrol",out);
+# t.addChannel("AMcontrol",out);
 print "Activate debug message on channel AM"
-t.addChannel("AM",nullFile);
+# t.addChannel("AM",out);
 
 # TO BE SET BY HAND
-numNodes = 3
+numNodes = 4
 
 print "Creating node 1...";
 node1 =t.getNode(1);
@@ -66,6 +83,12 @@ node3 = t.getNode(3);
 time3 = 2*t.ticksPerSecond();
 node3.bootAtTime(time3);
 print ">>>Will boot at time", time3/t.ticksPerSecond(), "[sec]";
+
+print "Creating node 4...";
+node4 = t.getNode(4);
+time4 = 3*t.ticksPerSecond();
+node4.bootAtTime(time4);
+print ">>>Will boot at time", time4/t.ticksPerSecond(), "[sec]";
 
 
 print "Creating radio channels..."
@@ -107,7 +130,7 @@ for i in range(1, numNodes+1):
 
 print "Start simulation with TOSSIM! \n\n\n";
 
-for i in range(0,4000):
+for i in range(0,2000):
 	t.runNextEvent()
 	
 print "\n\n\nSimulation finished!";

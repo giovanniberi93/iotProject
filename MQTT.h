@@ -6,7 +6,7 @@
 
 // max amount of time between an event and the following one in the client
 // expressed in milliseconds
-#define WAIT_CONNECT_TIME 1000
+#define CLIENT_AVG_SENSE_PERIOD 1000
 
 // periodicity of the 
 #define CHECK_FORWARD_PERIODICITY 80

@@ -1,4 +1,4 @@
-#include "myMessages.h"
+#include "MQTT.h"
 
 configuration MQTTmoteAppC{}
 
@@ -12,16 +12,16 @@ implementation{
 		components new TimerMilliC() as ServerTimer;
 		components new FakeSensorC();
 		// CONNECT
-		components new AMSenderC(CONNECT) as CONNECTsender;
+		components new AMSenderC(CONNECT) 	as CONNECTsender;
 		components new AMReceiverC(CONNECT) as CONNECTreceiver;
 		// SUBSCRIBE
-		components new AMSenderC(SUBSCRIBE) as SUBSCRIBEsender;
-		components new AMReceiverC(SUBSCRIBE) as SUBSCRIBEreceiver;
+		components new AMSenderC(SUBSCRIBE) 	as SUBSCRIBEsender;
+		components new AMReceiverC(SUBSCRIBE) 	as SUBSCRIBEreceiver;
 		// PUBLISH
-		components new AMSenderC(PUBLISH) as PUBLISHsender;
+		components new AMSenderC(PUBLISH) 	as PUBLISHsender;
 		components new AMReceiverC(PUBLISH) as PUBLISHreceiver;
 		// forward messages
-		components new AMSenderC(FORWARD) as FORWARDsender;
+		components new AMSenderC(FORWARD) 	as FORWARDsender;
 		components new AMReceiverC(FORWARD) as FORWARDreceiver;
 
 	// App.interface	-> Component that offers that interface
