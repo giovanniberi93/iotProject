@@ -169,13 +169,13 @@ implementation{
 
 
 	task void forwardToSubscribers(){
-		forw_msg_t* myPayload;
+		pub_msg_t* myPayload;
 		sizedArray_t* topicSubcribers;
 		// toBeForwarded points to the message that has just been published
 		// get the significant values in order not to create concurrency problems if other message are published 
 		// and they need toBeForwarded variable in PUBLISHreceiver.receive
 		dbg("FORWARDserver","New packet to forward on topic %hhu, value: %hhu\n", toBeForwarded->topic, toBeForwarded->value);
-		myPayload = (forw_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(forw_msg_t)));
+		myPayload = (pub_msg_t*)(call Packet.getPayload(&pkt_forward,sizeof(pub_msg_t)));
 		myPayload-> sourceID = toBeForwarded->sourceID;
 		myPayload-> topic = toBeForwarded->topic;
 		myPayload-> value = toBeForwarded->value;
@@ -199,14 +199,14 @@ implementation{
 		if(topicSubcribers[0].counter > 0){
 			myPayload->qos = 0;
 			myPayload->destID = topicSubcribers[0].IDs[0];
-			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(pub_msg_t));
 			lastForwardID++;
 		} else if (topicSubcribers[1].counter > 0){
 			// if I do not have subscribers with qos = 0, but at least one with qos = 1 
 			myPayload->qos = 1;
 			myPayload->destID = topicSubcribers[1].IDs[0];
 			call PacketAcknowledgements.requestAck(&pkt_forward);
-			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+			call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(pub_msg_t));
 			lastForwardID++;
 		} else {
 			// there are no subscribers at all
@@ -399,9 +399,9 @@ implementation{
 
 	// FORWARDreceiver interface
 	event message_t* FORWARDreceiver.receive(message_t* bufPtr, void* payload, uint8_t len){
-		forw_msg_t* myPayload;
+		pub_msg_t* myPayload;
 
-		myPayload = (forw_msg_t*)payload;
+		myPayload = (pub_msg_t*)payload;
 		// only check if this message is equal to the last one; it happens if the ack was lost
 		if(lastForwardID == myPayload->msgID){
 			dbg("FORWARDserver","FW:Message received twice, discard\n");
@@ -430,9 +430,9 @@ implementation{
 	// FORWARDsender(AMsend) interface
 	event void FORWARDsender.sendDone(message_t* msg, error_t error){
 		long nextID;
-		forw_msg_t* myPayload;
+		pub_msg_t* myPayload;
 
-		myPayload = (forw_msg_t*)call Packet.getPayload(msg,sizeof(forw_msg_t));
+		myPayload = (pub_msg_t*)call Packet.getPayload(msg,sizeof(pub_msg_t));
 		if (myPayload->qos == 1){
 			if(/*&pkt_subscribe == buf && */ error == SUCCESS ){ 
 				dbg("FORWARDserver", "FORWARD correctly sent... ");
@@ -442,7 +442,7 @@ implementation{
 				else{
 					dbg_clear("FORWARDserver", "but non acked \n");
 					call PacketAcknowledgements.requestAck(&pkt_forward);
-					call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(forw_msg_t));
+					call FORWARDsender.send(myPayload->destID, &pkt_forward,sizeof(pub_msg_t));
 					return;
 				}
 			}
@@ -467,7 +467,7 @@ implementation{
 			call PacketAcknowledgements.requestAck(&pkt_forward);
 		myPayload-> destID = nextID;
 		// dbg("FORWARDserver", "FORWARD to %hhu \n", nextID);
-		call FORWARDsender.send(nextID, &pkt_forward,sizeof(forw_msg_t));
+		call FORWARDsender.send(nextID, &pkt_forward,sizeof(pub_msg_t));
 
 
 		return;

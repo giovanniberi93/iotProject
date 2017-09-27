@@ -33,16 +33,8 @@ typedef nx_struct pub_msg{
 	nx_int16_t qos;
 	nx_int16_t value;
 	nx_int16_t topic;
-} pub_msg_t;
-
-typedef nx_struct forw_msg{
-	nx_int16_t msgID;
-	nx_int16_t sourceID;
-	nx_int16_t qos;
-	nx_int16_t value;
-	nx_int16_t topic;
 	nx_int16_t destID;
-} forw_msg_t;
+} pub_msg_t;
 
 // data structure built to store subscriptions
 typedef nx_struct arr{
