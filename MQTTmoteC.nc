@@ -357,7 +357,7 @@ implementation{
 	event void PUBLISHsender.sendDone(message_t* msg, error_t error){
 		pub_msg_t *myPayload = (pub_msg_t*)(call Packet.getPayload(msg,sizeof(pub_msg_t)));
 		if(/*&pkt_publish == buf && */ error == SUCCESS ){ 
-			dbg("PUBLISHclient", "PUBLISH correctly sent... ");
+			dbg("PUBLISHclient", "PUBLISH correctly sent... ",myPayload->value);
 			if(myPayload->qos == 0){
 				dbg_clear("PUBLISHclient","no ack requested\n");
 				return;
@@ -457,7 +457,6 @@ implementation{
 			if (nextID < 0){
 				// forwarding procedure has ended
 				// unlock the forwarder for new messages
-				dbg_clear("FORWARDserver", "****** %d \n",nextID);
 				lockedForwarder = 0;
 				return;
 			}
@@ -569,6 +568,8 @@ implementation{
 			dbg("AMcontrol", "AM started\n");
 		else
 			call AMControl.start();
+
+
 
 		// client connects to the server
 		if(isClient()){
